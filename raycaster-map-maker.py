@@ -2,7 +2,7 @@ import pygame
 
 
 #Run with python3
-#Use W to export and the number keys 1 through 6 to change what color wall to make
+#Use W to export and the number keys 1 through 6 to change what color wall to make 7 goes to the air tool
 
 
 
@@ -138,6 +138,8 @@ while running:
         currentNum = 5
     elif pygame.key.get_pressed()[pygame.K_6]:
         currentNum = 6
+    elif pygame.key.get_pressed()[pygame.K_7]:
+        currentNum = 0
 
     text_surface = tahoma.render("Tool: " + str(currentNum), False, (255, 255, 255, 255));
     screen.blit(text_surface, (0 ,0));
