@@ -5,7 +5,12 @@ A simple raycasting engine I made using Lodevs tutorial ( https://lodev.org/cgtu
 
 ]]--
 
+--[[
 
+Changelog:
+added screen moving support
+
+]]--
 
 
 
@@ -29,6 +34,14 @@ end
 local screenWidth, screenHeight = 320, 240;
 local screenPosX, screenPosY = 100, 100;
 local mapWidth, mapHeight = 24, 24;
+
+local lboxUI = true;
+local holdingUIKey = false;
+local holdingLMB = false;
+local movingScreen = false;
+
+local initialSPosX, initialSPosY;
+local SOffsetX, SOffsetY;
 
 function DrawVLine(x, drawStart, drawEnd, r, g, b, a)
     draw.Color(r, g, b, a);
@@ -257,6 +270,62 @@ callbacks.Register("Draw", function()
         end
         if map[int(posX)][int(posY - dirY * moveSpeed)] == 0 then
             posY = posY - dirY * moveSpeed;
+        end
+    end
+
+    if input.IsButtonDown(KEY_INSERT) and not holdingUIKey then
+        holdingUIKey = true;
+        lboxUI = not lboxUI;
+    elseif not input.IsButtonDown(KEY_INSERT) then
+        holdingUIKey = false;
+    end
+
+    if lboxUI then
+        draw.Color(255, 0, 0, 127);
+        draw.FilledRect(screenPosX, screenPosY - 20, screenPosX + screenWidth + 1, screenPosY);
+
+        --[[if input.IsButtonDown(MOUSE_LEFT) then
+            local mPos = input.GetMousePos();
+
+            local x = mPos[1];
+            local y = mPos[2];
+
+            if x > screenPosX and x < screenPosX + screenWidth and y > screenPosY - 20 and y < screenPosY then
+                screenPosX = x;
+                screenPosY = y;
+            end
+        end]]--
+
+        if input.IsButtonDown(MOUSE_LEFT) and not holdingLMB then
+            holdingLMB = true;
+
+            local mPos = input.GetMousePos();
+
+            --initialSPosX = mPos[1];
+            --initialSPosY = mPos[2];
+
+            x = mPos[1];
+            y = mPos[2];            
+
+            if x > screenPosX and x < screenPosX + screenWidth and y > screenPosY - 20 and y < screenPosY then
+                SOffsetX = mPos[1] - screenPosX;
+                SOffsetY = mPos[2] - (screenPosY);
+                movingScreen = true;
+            end
+
+        elseif not input.IsButtonDown(MOUSE_LEFT) then
+            holdingLMB = false;
+            movingScreen = false;
+        end
+
+        if movingScreen then
+            local mPos = input.GetMousePos();
+
+            local x = mPos[1];
+            local y = mPos[2];
+
+            screenPosX = x - SOffsetX;
+            screenPosY = y - SOffsetY;
         end
     end
 end)
