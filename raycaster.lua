@@ -8,7 +8,7 @@ A simple raycasting engine I made using Lodevs tutorial ( https://lodev.org/cgtu
 --[[
 
 Changelog:
-added a keybind to toggle screen visibility
+added resizing of the screen size by dragging the bottom right corner
 
 ]]--
 
@@ -47,11 +47,13 @@ local lboxUI = true;
 local holdingUIKey = false;
 local holdingLMB = false;
 local movingScreen = false;
+local resizingScreen = false;
 
 local screenVisible = true;
 local holdingVisibleKey = false;
 
 local initialSPosX, initialSPosY;
+local initialSizeX, initialSizeY;
 local SOffsetX, SOffsetY;
 
 function DrawVLine(x, drawStart, drawEnd, r, g, b, a)
@@ -316,11 +318,18 @@ callbacks.Register("Draw", function()
                     SOffsetX = mPos[1] - screenPosX;
                     SOffsetY = mPos[2] - screenPosY;
                     movingScreen = true;
+                elseif x > (screenPosX + screenWidth) - 20 and x < (screenPosX + screenWidth) + 5 and y > (screenPosY + screenHeight) - 20 and y < (screenPosY + screenHeight) + 10 then
+                    SOffsetX = mPos[1] - screenPosX;
+                    SOffsetY = mPos[2] - screenPosY;
+                    initialSizeX = screenWidth;
+                    initialSizeY = screenHeight;
+                    resizingScreen = true;
                 end
 
             elseif not input.IsButtonDown(MOUSE_LEFT) then
                 holdingLMB = false;
                 movingScreen = false;
+                resizingScreen = false;
             end
 
             if movingScreen then
@@ -331,6 +340,17 @@ callbacks.Register("Draw", function()
 
                 screenPosX = x - SOffsetX;
                 screenPosY = y - SOffsetY;
+            end
+
+            if resizingScreen then
+                local mPos = input.GetMousePos();
+
+                local x = mPos[1];
+                local y = mPos[2];
+
+                screenWidth = initialSizeX + (x - SOffsetX) - screenPosX;
+                screenHeight = initialSizeY + (y - SOffsetY) - screenPosY;
+                --print(string.format("%d %d", (x - SOffsetX) - screenPosX, (y - SOffsetY) - screenPosY));
             end
         end
     end
