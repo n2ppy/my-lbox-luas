@@ -9,6 +9,7 @@ local Helpers = lnxLib.TF2.Helpers;
 local Math = lnxLib.Utils.Math;
 local Conversion = lnxLib.Utils.Conversion;
 local PlayerResource = lnxLib.TF2.PlayerResource;
+local Prediction = lnxLib.TF2.Prediction;
 
 local arial = draw.CreateFont("Arial Black", 15, 500, FONTFLAG_ANTIALIAS);
 
@@ -45,6 +46,24 @@ function RemoveLastTableElement(t)
 
     for i, v in pairs(t) do
         if i ~= tLen then
+            temp[i] = v;
+        end
+    end
+
+    return temp;
+end
+
+function RemoveElementsUntilSize(t, size)
+    local temp = {};
+
+    local tLen = GetTableLength(t);
+
+    if tLen <= size then
+        return t;
+    end
+
+    for i, v in pairs(t) do
+        if i <= size then
             temp[i] = v;
         end
     end
@@ -150,6 +169,9 @@ local function GetTimeHitbox(id, time, ent)
 end
 
 local dataTable = {data = {}, pos = {}}; -- table containing tables with data for example: {data = {}} the data is filled with tables like this: {tick_count = 0}
+local forwardTrackTable = {data = {}, pos = {}};
+
+local forwardTrackingTicks = 0;
 
 local shouldDraw = true;
 
@@ -160,8 +182,40 @@ local ping = 0;
 local pingTimer = 0;
 local pingMaxTimer = 32;
 
-local aimDistance = 3;
+local targetPing = 200.0;
+
+local aimDistance = 1;
 local distMod = 0.01;
+local bestTick = 1;
+
+function PredictPlayer(wPlayer, entity) -- basic player prediction for now
+    --[[local dataTable = {data = {}, pos = {}};
+    local predData = Prediction.Player(wPlayer, forwardTrackingTicks);
+    dataTable.pos = predData.pos;
+    
+    local ticksPredicted = {};
+    for i = 1, forwardTrackingTicks do
+        ticksPredicted[i] = i;
+    end
+
+    dataTable.data = ticksPredicted;]]--
+
+    local velocity = vector.Multiply(entity:EstimateAbsVelocity(), Conversion.Ticks_to_Time(1));
+    local startPos = wPlayer:GetHitboxPos(1);
+    local lastPos = startPos;
+
+    local ticksPredicted = {};
+    for i = 1, forwardTrackingTicks do
+        --local nextPos = lastPos;
+
+        local nextPos = vector.Add(lastPos, velocity);
+
+        lastPos = nextPos;
+        ticksPredicted[i] = nextPos;
+    end
+
+    return ticksPredicted;
+end
 
 callbacks.Register("CreateMove", function(cmd)
     local me = WPlayer.GetLocal()
@@ -171,8 +225,24 @@ callbacks.Register("CreateMove", function(cmd)
     if pingTimer >= pingMaxTimer then
         pingTimer = 0;
 
-        ping = PlayerResource.GetPing()[client.GetLocalPlayerIndex() + 1];
+        local netChannel = clientstate.GetNetChannel();
+
+        --ping = PlayerResource.GetPing()[client.GetLocalPlayerIndex() + 1];
+        ping = netChannel:GetLatency(0) + netChannel:GetLatency(1);
+        local incomingPing = netChannel:GetLatency(1);
+        incomingPing = incomingPing * 2; -- times it by 2 to get what i think ping without fake latency should be
+        local fakeLatency = math.floor(targetPing - (incomingPing * 1000.0));
+        --print((incomingPing * 1000.0) + fakeLatency);
+        --print(ping * 1000.0);
+        if fakeLatency < 0 then
+            fakeLatency = 0;
+        end
+        --gui.SetValue("Fake Latency Value (ms)", fakeLatency);
+        
+        --forwardTrackingTicks = Conversion.Time_to_Ticks(ping);
     end
+
+    local bestPlayerDist = 15.0;
     
     local players = entities.FindByClass("CTFPlayer")
     for idx, entity in pairs(players) do
@@ -182,27 +252,49 @@ callbacks.Register("CreateMove", function(cmd)
         if dataTable[idx] == nil then dataTable[idx] = {} end
         if dataTable[idx].data == nil then dataTable[idx].data = {} end
         if dataTable[idx].pos == nil then dataTable[idx].pos = {} end
+        if dataTable[idx].draw == nil then dataTable[idx].draw = false end
+
+        if forwardTrackTable[idx] == nil then forwardTrackTable[idx] = {} end
+        if forwardTrackTable[idx].data == nil then forwardTrackTable[idx].data = {} end
+        if forwardTrackTable[idx].pos == nil then forwardTrackTable[idx].pos = {} end
 
         local player = WPlayer.FromEntity(entity)
         local pLocal = WPlayer.GetLocal();
 
         local BacktrackTicks = GetTableLength(dataTable[idx].data);
 
-        if BacktrackTicks == Conversion.Time_to_Ticks(0.200) then
-            dataTable[idx].data = RemoveLastTableElement(dataTable[idx].data);
-            dataTable[idx].pos = RemoveLastTableElement(dataTable[idx].pos);
+        maxTrack = 0;
+        if ping > 0.1 then
+            maxTrack = ping; -- / 1000.0;
         end
 
-        local shiftedTime = cmd.tick_count;
+        if BacktrackTicks >= Conversion.Time_to_Ticks(0.200 + maxTrack) then
+            --dataTable[idx].data = RemoveLastTableElement(dataTable[idx].data);
+            --dataTable[idx].pos = RemoveLastTableElement(dataTable[idx].pos);
 
-        if ping > 100 then
-            local shiftedTime = cmd.tick_count - Conversion.Time_to_Ticks(ping / 1000);
+            dataTable[idx].data = RemoveElementsUntilSize(dataTable[idx].data, Conversion.Time_to_Ticks(0.200 + maxTrack));
+            dataTable[idx].pos = RemoveElementsUntilSize(dataTable[idx].pos, Conversion.Time_to_Ticks(0.200 + maxTrack));
         end
 
-        --dataTable[idx].data = TableInsert(dataTable[idx].data, cmd.tick_count);
-        --dataTable[idx].pos = TableInsert(dataTable[idx].pos, player:GetHitboxPos(1));
-        dataTable[idx].data = TableInsert(dataTable[idx].data, shiftedTime);
-        dataTable[idx].pos = TableInsert(dataTable[idx].pos, GetTimeHitbox(1, shiftedTime, entity));
+        --[[local angles = Math.PositionAngles(pLocal:GetEyePos(), player:GetEyePos());
+        local dist = Math.AngleFov(angles, engine.GetViewAngles());
+        if dist < 30 then
+            if forwardTrackingTicks > 0 then
+                forwardTrackTable[idx].pos = PredictPlayer(player, entity);
+            end
+        end]]--
+
+        --[[local shiftedTime = cmd.tick_count;
+
+        if ping > 0.1 then
+            local shiftedTime = cmd.tick_count - Conversion.Time_to_Ticks(ping);
+        end]]--
+
+        dataTable[idx].data = TableInsert(dataTable[idx].data, cmd.tick_count);
+        dataTable[idx].pos = TableInsert(dataTable[idx].pos, GetTimeHitbox(1, cmd.tick_count, entity));
+
+        --dataTable[idx].data = TableInsert(dataTable[idx].data, shiftedTime);
+        --dataTable[idx].pos = TableInsert(dataTable[idx].pos, GetTimeHitbox(1, shiftedTime, entity));
 
         --[[
         local delta = source - dest
@@ -233,11 +325,24 @@ callbacks.Register("CreateMove", function(cmd)
         local bestAimPos = Math.PositionAngles(pLocal:GetEyePos(), entAimpos);
         local aimDist = Math.AngleFov(bestAimPos, engine.GetViewAngles());
 
-        if aimDist < 30 then
+        if aimDist < bestPlayerDist then
+            bestPlayerDist = aimDist;
+            --[[local trace = engine.TraceLine( pLocal:GetEyePos(), entAimpos, MASK_SHOT_HULL );
+            
+            if trace.entity ~= nil then
+                if trace.entity ~= me or trace.entity ~= entity then
+                    goto continue;
+                end
+            end]]--
+
             --shouldDraw = true;
-            if (cmd.buttons & IN_ATTACK) ~= 0 then
-                cmd.buttons = cmd.buttons & (~IN_ATTACK);
+            dataTable[idx].draw = true;
+            --if (cmd.buttons & IN_ATTACK) ~= 0 then
+                --cmd.buttons = cmd.buttons & (~IN_ATTACK);
                 local hasHit = false;
+
+                local closestTick = 1;
+                local closestDist = aimDistance;
                 for i = 1, GetTableLength(dataTable[idx].data) do
                     local v = dataTable[idx].data[i];
                     local pos = dataTable[idx].pos[i];
@@ -277,24 +382,69 @@ callbacks.Register("CreateMove", function(cmd)
                         local angles = Math.PositionAngles(pLocal:GetEyePos(), pos);
                         local dist = Math.AngleFov(angles, engine.GetViewAngles());
 
-                        if dist < aimDistance / (GetDistance(pLocal:GetEyePos(), pos) * distMod) then
-                            local trace = engine.TraceLine( pLocal:GetEyePos(), pos, MASK_SHOT_HULL );
-                            if trace.entity ~= nil then
-                                if trace.entity ~= me or trace.entity ~= entity then
-                                    hasHit = true;
-                                    cmd.tick_count = v;
-                                    cmd:SetButtons(cmd.buttons | IN_ATTACK);
-                                end
-                            end
+                        if dist < closestDist then
+                            closestTick = i;
+                            closestDist = dist;
+                            bestTick = closestTick;
+                            --if dist < aimDistance then -- / (GetDistance(pLocal:GetEyePos(), pos) * distMod) then
+                            --end
                         end
                     end
                 end
-                if not hasHit then
-                    cmd:SetButtons(cmd.buttons | IN_ATTACK);
+
+                local v = dataTable[idx].data[closestTick];
+                local pos = dataTable[idx].pos[closestTick];
+
+                if (cmd.buttons & IN_ATTACK) ~= 0 then
+                    cmd.buttons = cmd.buttons & (~IN_ATTACK);
+                    local hasHit = false;
+
+                    local trace = engine.TraceLine( pLocal:GetEyePos(), pos, MASK_SHOT_HULL );
+                    --if trace.entity ~= nil then
+                        --if trace.entity == me or trace.entity == entity then
+                            local angles = Math.PositionAngles(pLocal:GetEyePos(), pos);
+                            hasHit = true;
+                            cmd:SetViewAngles(angles.x, angles.y, angles.z);
+                            --engine.SetViewAngles(angles);
+                            cmd.tick_count = v;
+                            cmd:SetButtons(cmd.buttons | IN_ATTACK);
+                        --end
+                    --end
+
+                    if not hasHit then
+                        cmd:SetButtons(cmd.buttons | IN_ATTACK);
+                    end
                 end
-            end
+
+                --[[for i = 1, GetTableLength(forwardTrackTable[idx].data) do
+                    --local v = forwardTrackTable[idx].data[i];
+                    local v = cmd.tick_count + i;
+                    local pos = forwardTrackTable[idx].pos[i];
+
+                    --pos = vector.Add(pos, entity:GetPropVector("localdata", "m_vecViewOffset[0]"));
+
+                    local angles = Math.PositionAngles(pLocal:GetEyePos(), pos);
+                    local dist = Math.AngleFov(angles, engine.GetViewAngles());
+
+                    if dist < aimDistance / (GetDistance(pLocal:GetEyePos(), pos) * distMod) then
+                        local trace = engine.TraceLine( pLocal:GetEyePos(), pos, MASK_SHOT_HULL );
+                        if trace.entity ~= nil then
+                            if trace.entity ~= me or trace.entity ~= entity then
+                                hasHit = true;
+                                cmd.tick_count = v;
+                                cmd:SetButtons(cmd.buttons | IN_ATTACK);
+                            end
+                        end
+                    end
+                end]]--
+
+                --if not hasHit then
+                    --cmd:SetButtons(cmd.buttons | IN_ATTACK);
+                --end
+            --end
         else
             --shouldDraw = false;
+            dataTable[idx].draw = false;
         end
 
         ::continue::
@@ -318,6 +468,7 @@ callbacks.Register("Draw", function()
             if dataTable[idx] == nil then dataTable[idx] = {} end
             if dataTable[idx].data == nil then dataTable[idx].data = {} end
             if dataTable[idx].pos == nil then dataTable[idx].pos = {} end
+            if dataTable[idx].draw == nil then dataTable[idx].draw = false end
 
             --[[if delays[idx] == nil then
                 delays[idx] = 1;
@@ -354,9 +505,48 @@ callbacks.Register("Draw", function()
                 end
             end]]--
 
-            --[[for i = 1, GetTableLength(dataTable[idx].data) do
-                local v = dataTable[idx].data[i];
-                local pos = dataTable[idx].pos[i];
+            if dataTable[idx].draw == true then
+                --[[for i = 1, GetTableLength(dataTable[idx].data) do
+                    local v = dataTable[idx].data[i];
+                    local pos = dataTable[idx].pos[i];
+
+                    local angles = Math.PositionAngles(pLocal:GetEyePos(), pos);
+                    local dist = Math.AngleFov(angles, engine.GetViewAngles());
+
+                    local screenPos = client.WorldToScreen(pos);
+
+                    if screenPos ~= nil then
+                        draw.Color(255, 255, 255, 255)
+
+                        if i == bestTick then
+                            draw.Color(0, 255, 0, 255);
+                        end
+
+                        draw.OutlinedCircle(screenPos[1], screenPos[2], 5, 4);
+                    end
+                end]]--
+                local pos = dataTable[idx].pos[bestTick];
+                if pos ~= nil then
+                    local screenPos = client.WorldToScreen(pos);
+
+                    if screenPos ~= nil then
+                        --draw.Color(255, 255, 255, 255)
+
+                        --if i == bestTick then
+                        --end
+
+                        draw.Color(0, 255, 0, 255);
+
+                        draw.OutlinedCircle(screenPos[1], screenPos[2], 5, 4);
+                        draw.Color(255, 255, 255, 255);
+                    end
+                end
+            end
+
+            --[[for i = 1, GetTableLength(forwardTrackTable[idx].pos) do
+                --local v = forwardTrackTable[idx].data[i];
+                local pos = forwardTrackTable[idx].pos[i];
+                --pos = vector.Add(pos, entity:GetPropVector("localdata", "m_vecViewOffset[0]"));
 
                 local angles = Math.PositionAngles(pLocal:GetEyePos(), pos);
                 local dist = Math.AngleFov(angles, engine.GetViewAngles());
