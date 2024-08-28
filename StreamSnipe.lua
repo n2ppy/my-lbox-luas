@@ -21,7 +21,7 @@ callbacks.Register( "OnLobbyUpdated", "StreamSniper", function( lobby )
 
         if player:GetSteamID() == SteamID and useName == false then
             PlayerInLobby = true;
-        elseif steam.GetPlayerName(player:GetSteamID()) and useName == true then
+        elseif steam.GetPlayerName(player:GetSteamID()) == name and useName == true then
             PlayerInLobby = true;
         end
     end
