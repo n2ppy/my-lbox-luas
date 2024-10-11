@@ -5,8 +5,8 @@ Date: I don't remember when this was made but it was a while ago back when MCPEn
 I don't know if this even works, if it doesn't then just use something else I guess.
 ]]--
 
-local SteamID = ""; -- Input the SteamID here eg STEAM_0:0:123456789
-local name = ""; -- streamers display name on steam
+local SteamID = "STEAM_0:0:149751397"; -- Input the SteamID here eg STEAM_0:0:123456789
+local name = "twitch tv/theholoren (LIVE)"; -- streamers display name on steam
 
 local useName = true;
 
